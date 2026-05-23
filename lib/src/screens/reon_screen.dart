@@ -333,7 +333,7 @@ class _ReoniHomeScreenState extends State<_ReoniHomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Očitavanja',
+                    'Reoni',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),

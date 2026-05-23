@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
-import '../core/app_config.dart';
 import '../data/demo_repository.dart';
 import 'reon_screen.dart';
 
@@ -18,10 +18,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
   bool isLoading = false;
   bool isAutoLogin = false;
+  String appVersion = '';
 
   @override
   void initState() {
     super.initState();
+    _loadAppVersion();
     _restoreSession();
   }
 
@@ -38,6 +40,12 @@ class _LoginScreenState extends State<LoginScreen> {
     usernameController.text = saved.username;
     passwordController.text = saved.password;
     await submit(auto: true);
+  }
+
+  Future<void> _loadAppVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    setState(() => appVersion = info.version);
   }
 
   Future<void> submit({bool auto = false}) async {
@@ -146,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 28),
                   Text(
-                    'API: ${AppConfig.apiBaseUrl}\nPowered by ZP V: 1.9.6',
+                    'Powered by ZP${appVersion.isEmpty ? '' : ' V: $appVersion'}',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,

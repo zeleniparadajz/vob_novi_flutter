@@ -161,7 +161,10 @@ class _OcitavanjeTile extends StatelessWidget {
               ? const Color(0xFFB45309)
               : theme.colorScheme.primary
         : theme.colorScheme.onSurfaceVariant;
-    final syncColor = item.isSynced
+    final syncIcon = item.isOcitano && item.isSynced
+        ? Icons.cloud_done_outlined
+        : Icons.cloud_off_outlined;
+    final syncColor = item.isOcitano && item.isSynced
         ? theme.colorScheme.primary
         : theme.colorScheme.error;
     return Card(
@@ -170,72 +173,86 @@ class _OcitavanjeTile extends StatelessWidget {
                 ? const Color(0xFFFFF4DE)
                 : const Color(0xFFEAF7EF)
           : Colors.white,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 10,
-        ),
-        leading: CircleAvatar(
-          radius: 22,
-          backgroundColor: statusColor.withValues(alpha: 0.12),
-          child: Text(
-            item.rbr > 0 ? item.rbr.toString() : '-',
-            style: TextStyle(color: statusColor, fontWeight: FontWeight.w800),
-          ),
-        ),
-        title: Text(
-          item.potrosac,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  _MiniTag(text: item.idpot, icon: Icons.person_outline),
-                  _MiniTag(
-                    text: item.vodomjer,
-                    icon: Icons.water_drop_outlined,
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: statusColor.withValues(alpha: 0.12),
+                child: Text(
+                  item.rbr > 0 ? item.rbr.toString() : '-',
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.w800,
                   ),
-                  if (item.idstanjebrojila > 0)
-                    _MiniTag(
-                      text: 'Ind: ${item.idstanjebrojila}',
-                      icon: Icons.flag_outlined,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                item.adr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              if (item.lokacija.trim().isNotEmpty)
-                Text(
-                  item.lokacija,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                 ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.potrosac,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        _MiniTag(text: item.idpot, icon: Icons.person_outline),
+                        _MiniTag(
+                          text: item.vodomjer,
+                          icon: Icons.water_drop_outlined,
+                        ),
+                        if (item.idstanjebrojila > 0)
+                          _MiniTag(
+                            text: 'Ind: ${item.idstanjebrojila}',
+                            icon: Icons.flag_outlined,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      item.adr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (item.lokacija.trim().isNotEmpty)
+                      Text(
+                        item.lokacija,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              _TrailingStatus(
+                note: latestNote,
+                syncIcon: syncIcon,
+                syncColor: syncColor,
+                onNoteTap: onNoteTap,
+              ),
             ],
           ),
         ),
-        trailing: _TrailingStatus(
-          note: latestNote,
-          syncIcon: item.isSynced
-              ? Icons.cloud_done_outlined
-              : Icons.cloud_off_outlined,
-          syncColor: syncColor,
-          onNoteTap: onNoteTap,
-        ),
-        onTap: onTap,
       ),
     );
   }
@@ -250,8 +267,8 @@ class _TrailingStatus extends StatelessWidget {
   });
 
   final BackendNapomenaModel? note;
-  final IconData syncIcon;
-  final Color syncColor;
+  final IconData? syncIcon;
+  final Color? syncColor;
   final VoidCallback onNoteTap;
 
   @override
@@ -259,8 +276,11 @@ class _TrailingStatus extends StatelessWidget {
     final note = this.note;
     final theme = Theme.of(context);
     final hasImage = note != null && note.imageUrl.trim().isNotEmpty;
+    final hasSyncStatus = syncIcon != null && syncColor != null;
+    if (!hasImage && !hasSyncStatus) return const SizedBox.shrink();
+
     return SizedBox(
-      width: hasImage ? 96 : 28,
+      width: hasImage ? (hasSyncStatus ? 96 : 64) : 28,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -300,9 +320,9 @@ class _TrailingStatus extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            if (hasSyncStatus) const SizedBox(width: 8),
           ],
-          Icon(syncIcon, color: syncColor, size: 22),
+          if (hasSyncStatus) Icon(syncIcon, color: syncColor, size: 22),
         ],
       ),
     );
