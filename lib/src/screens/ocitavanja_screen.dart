@@ -38,6 +38,7 @@ class _OcitavanjaScreenState extends State<OcitavanjaScreen> {
     final items = widget.repository.ocitavanjaZaRutu(
       widget.ruta.id,
       widget.user,
+      reonId: widget.ruta.reonId,
     );
     final hasInternet = await widget.repository.hasNetworkSignal();
     if (!mounted || !hasInternet) return;
@@ -57,6 +58,7 @@ class _OcitavanjaScreenState extends State<OcitavanjaScreen> {
     final allItems = widget.repository.ocitavanjaZaRutu(
       widget.ruta.id,
       widget.user,
+      reonId: widget.ruta.reonId,
     );
     final items = _filterItems(allItems);
     return Scaffold(

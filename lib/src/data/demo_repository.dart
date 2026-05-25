@@ -159,10 +159,14 @@ class DemoVodovodRepository {
     }).toList();
   }
 
-  List<OcitavanjeModel> ocitavanjaZaRutu(String rutaId, InkasantiModel user) {
+  List<OcitavanjeModel> ocitavanjaZaRutu(
+    String rutaId,
+    InkasantiModel user, {
+    required String reonId,
+  }) {
     final items = _ocitavanjaZaInkasanta(
       user,
-    ).where((item) => item.idrute == rutaId).toList();
+    ).where((item) => item.idreon == reonId && item.idrute == rutaId).toList();
     items.sort(_compareRbr);
     return items;
   }
