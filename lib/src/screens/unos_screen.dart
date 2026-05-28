@@ -233,6 +233,7 @@ class _UnosScreenState extends State<UnosScreen> {
     final indikator = selectedIndikator;
     final potrosnja = _calculatePotrosnja();
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Unos očitavanja'),
         actions: [

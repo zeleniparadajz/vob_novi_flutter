@@ -36,6 +36,7 @@ class _ReonScreenState extends State<ReonScreen> {
         await _handleBack();
       },
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         body: IndexedStack(
           index: selectedTab,
           children: [
