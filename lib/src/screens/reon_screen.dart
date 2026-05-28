@@ -45,7 +45,6 @@ class _ReonScreenState extends State<ReonScreen> {
                 return MaterialPageRoute(
                   builder: (_) => _ReoniHomeScreen(
                     repository: widget.repository,
-                    user: widget.user,
                     onSearch: _openGlobalSearch,
                     onLogout: _logout,
                   ),
@@ -90,7 +89,7 @@ class _ReonScreenState extends State<ReonScreen> {
     }
 
     final readings = widget.repository.nesinhronizovanaOcitavanjaCount(
-      widget.user,
+      widget.repository.currentUser,
     );
     final notes = widget.repository.nesinhronizovaneNapomene().length;
     if (readings == 0 && notes == 0) {
@@ -154,13 +153,11 @@ class _ReonScreenState extends State<ReonScreen> {
 class _ReoniHomeScreen extends StatefulWidget {
   const _ReoniHomeScreen({
     required this.repository,
-    required this.user,
     required this.onSearch,
     required this.onLogout,
   });
 
   final DemoVodovodRepository repository;
-  final InkasantiModel user;
   final VoidCallback onSearch;
   final VoidCallback onLogout;
 
@@ -190,7 +187,7 @@ class _ReoniHomeScreenState extends State<_ReoniHomeScreen> {
     if (isSyncing) return;
     await _refreshSyncState();
     final beforeReadings = widget.repository.nesinhronizovanaOcitavanjaCount(
-      widget.user,
+      widget.repository.currentUser,
     );
     final beforeNotes = widget.repository.nesinhronizovaneNapomene().length;
     setState(() => isSyncing = true);
@@ -203,7 +200,7 @@ class _ReoniHomeScreenState extends State<_ReoniHomeScreen> {
       await _refreshSyncState();
       if (!mounted) return;
       final afterReadings = widget.repository.nesinhronizovanaOcitavanjaCount(
-        widget.user,
+        widget.repository.currentUser,
       );
       final afterNotes = widget.repository.nesinhronizovaneNapomene().length;
       setState(() {});
@@ -291,7 +288,7 @@ class _ReoniHomeScreenState extends State<_ReoniHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final repository = widget.repository;
-    final user = widget.user;
+    final user = repository.currentUser;
     final reoni = repository.reoni(user);
     final total = reoni.fold(0, (sum, reon) => sum + reon.ukupno);
     final ocitano = reoni.fold(0, (sum, reon) => sum + reon.ocitano);
@@ -370,7 +367,7 @@ class _ReoniHomeScreenState extends State<_ReoniHomeScreen> {
       MaterialPageRoute(
         builder: (_) => UnsyncedReadingsScreen(
           repository: widget.repository,
-          user: widget.user,
+          user: widget.repository.currentUser,
         ),
       ),
     );

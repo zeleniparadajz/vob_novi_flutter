@@ -34,6 +34,7 @@ class DemoVodovodRepository {
   static const _connectTimeout = Duration(seconds: 8);
   static const _readTimeout = Duration(seconds: 20);
   static const _uploadTimeout = Duration(seconds: 45);
+  static const _serverRefreshInterval = Duration(minutes: 20);
 
   final HttpClient _httpClient;
   final LocalVodovodStore _store;
@@ -48,6 +49,8 @@ class DemoVodovodRepository {
   OcitavanjeGlavnoModel? _aktivnoOcitavanje;
   InkasantiModel? _currentUser;
   DateTime? _lastSuccessfulSyncAt;
+  DateTime? _lastNetworkFailureAt;
+  DateTime? _lastServerRefreshAt;
   int _lastReadingsSyncCandidates = 0;
   String? _lastReadingsSyncError;
   int _lastNotesSyncCandidates = 0;
@@ -123,7 +126,7 @@ class DemoVodovodRepository {
   }
 
   List<ReonSummary> reoni(InkasantiModel user) {
-    final source = _ocitavanjaZaInkasanta(user);
+    final source = _ocitavanjaZaInkasanta(user, activeOnly: true);
     final groups = <String, List<OcitavanjeModel>>{};
     for (final item in source) {
       groups.putIfAbsent(item.idreon, () => []).add(item);
@@ -142,6 +145,7 @@ class DemoVodovodRepository {
   List<RutaSummary> ruteZaReon(String reonId, InkasantiModel user) {
     final items = _ocitavanjaZaInkasanta(
       user,
+      activeOnly: true,
     ).where((item) => item.idreon == reonId);
     final groups = <String, List<OcitavanjeModel>>{};
     for (final item in items) {
@@ -166,6 +170,7 @@ class DemoVodovodRepository {
   }) {
     final items = _ocitavanjaZaInkasanta(
       user,
+      activeOnly: true,
     ).where((item) => item.idreon == reonId && item.idrute == rutaId).toList();
     items.sort(_compareRbr);
     return items;
@@ -173,8 +178,14 @@ class DemoVodovodRepository {
 
   List<OcitavanjeModel> pretraga(String query) {
     final value = query.trim().toLowerCase();
-    if (value.isEmpty) return List.of(_ocitavanja);
-    return _ocitavanja.where((item) {
+    final activeId = _aktivnoOcitavanje?.id ?? 0;
+    final source = activeId <= 0
+        ? _ocitavanja
+        : _ocitavanja
+              .where((item) => item.ocitavanjeGlavnoId == activeId)
+              .toList();
+    if (value.isEmpty) return List.of(source);
+    return source.where((item) {
       return item.idpot.toLowerCase().contains(value) ||
           item.potrosac.toLowerCase().contains(value) ||
           item.vodomjer.toLowerCase().contains(value);
@@ -185,13 +196,17 @@ class DemoVodovodRepository {
       List.unmodifiable(_napomene);
 
   int nesinhronizovanaOcitavanjaCount(InkasantiModel user) {
-    return _ocitavanjaZaInkasanta(user).where((item) => !item.isSynced).length;
+    return _ocitavanjaZaInkasanta(
+      user,
+      activeOnly: false,
+    ).where(_isPendingOcitavanjeUpload).length;
   }
 
   List<OcitavanjeModel> nesinhronizovanaOcitavanja(InkasantiModel user) {
     final items = _ocitavanjaZaInkasanta(
       user,
-    ).where((item) => !item.isSynced).toList();
+      activeOnly: false,
+    ).where(_isPendingOcitavanjeUpload).toList();
     items.sort(_compareRbr);
     return items;
   }
@@ -216,12 +231,19 @@ class DemoVodovodRepository {
   }
 
   Future<bool> hasNetworkSignal() async {
+    final lastFailure = _lastNetworkFailureAt;
+    if (lastFailure != null &&
+        DateTime.now().difference(lastFailure) < const Duration(seconds: 12)) {
+      return false;
+    }
     try {
       await _getJson(
         '${AppConfig.apiBaseUrl}${AppConfig.maxOcitavanjePath}',
       ).timeout(const Duration(seconds: 5));
+      _lastNetworkFailureAt = null;
       return true;
     } catch (_) {
+      _lastNetworkFailureAt = DateTime.now();
       return false;
     }
   }
@@ -316,7 +338,10 @@ class DemoVodovodRepository {
   Future<SyncRunResult> _syncPendingNowInternal(String reason) async {
     final pendingReadings = await _store.loadUnsyncedOcitavanja();
     final pendingNotes = await _store.loadUnsyncedNapomene();
-    if (pendingReadings.isEmpty && pendingNotes.isEmpty) {
+    final shouldRefreshFromServer = _shouldRefreshFromServer(reason);
+    if (pendingReadings.isEmpty &&
+        pendingNotes.isEmpty &&
+        !shouldRefreshFromServer) {
       return const SyncRunResult(readings: 0, notes: 0, hadNetwork: true);
     }
 
@@ -335,8 +360,13 @@ class DemoVodovodRepository {
         'Sync start ($reason): ocitavanja ${pendingReadings.length}, napomene ${pendingNotes.length}',
       ),
     );
-    final readings = await syncUnsyncedOcitavanja();
-    final notes = await syncUnsyncedNapomene();
+    final readings = pendingReadings.isEmpty
+        ? 0
+        : await syncUnsyncedOcitavanja();
+    final notes = pendingNotes.isEmpty ? 0 : await syncUnsyncedNapomene();
+    if (shouldRefreshFromServer) {
+      await _refreshServerSnapshot(reason);
+    }
     return SyncRunResult(readings: readings, notes: notes, hadNetwork: true);
   }
 
@@ -360,9 +390,15 @@ class DemoVodovodRepository {
       try {
         final synced = item.copyWith(isSynced: true);
         await _putOcitavanje(synced);
-        await _store.updateOcitavanje(synced);
+        final serverItem = await _fetchOcitavanjeById(item.id);
+        if (!_serverConfirmsOcitavanje(item, serverItem)) {
+          throw BackendException(
+            'Server nije potvrdio upis za očitavanje ${item.id}.',
+          );
+        }
+        await _store.updateOcitavanje(serverItem);
         final index = _ocitavanja.indexWhere((local) => local.id == item.id);
-        if (index != -1) _ocitavanja[index] = synced;
+        if (index != -1) _ocitavanja[index] = serverItem;
         syncedCount++;
       } catch (error) {
         _lastReadingsSyncError ??= 'ID ${item.id}: $error';
@@ -453,6 +489,67 @@ class DemoVodovodRepository {
     }
   }
 
+  bool _shouldRefreshFromServer(String reason) {
+    if (_currentUser == null) return false;
+    if (reason.startsWith('manual')) return false;
+    if (reason == 'login' || reason == 'app_resumed') return true;
+    final lastRefresh = _lastServerRefreshAt;
+    return lastRefresh == null ||
+        DateTime.now().difference(lastRefresh) >= _serverRefreshInterval;
+  }
+
+  Future<void> _refreshServerSnapshot(String reason) async {
+    final current = _currentUser;
+    if (current == null) return;
+    try {
+      final user = await _refreshCurrentUserFromServer(current);
+      _aktivnoOcitavanje = await _fetchAktivnoOcitavanje();
+      await _store.saveAktivnoOcitavanje(_aktivnoOcitavanje!);
+      _stanjaBrojila = await _fetchStanjaBrojila();
+      await _store.saveStanjaBrojila(_stanjaBrojila);
+
+      final serverOcitavanja = await _fetchOcitavanjaZaInkasanta(
+        maxId: _aktivnoOcitavanje?.id ?? 0,
+        idZaOcitavanja: user.idZaOcitavanja,
+      );
+      final localMaxId = await _store.maxLocalOcitavanjeGlavnoId();
+      final onlineMaxId = _aktivnoOcitavanje?.id ?? 0;
+      if (localMaxId < onlineMaxId) {
+        await _store.replaceOcitavanja(serverOcitavanja);
+      } else {
+        await _store.mergeOcitavanjaForActiveImport(serverOcitavanja);
+      }
+      _ocitavanja = await _store.loadOcitavanja();
+      _napomene
+        ..clear()
+        ..addAll(await _store.loadUnsyncedNapomene());
+      _lastServerRefreshAt = DateTime.now();
+      unawaited(
+        AppLogger.log(
+          'Server refresh ($reason): ${serverOcitavanja.length} ocitavanja',
+        ),
+      );
+    } catch (error) {
+      unawaited(AppLogger.log('Server refresh greska ($reason): $error'));
+    }
+  }
+
+  Future<InkasantiModel> _refreshCurrentUserFromServer(
+    InkasantiModel fallback,
+  ) async {
+    _inkasanti = await _fetchInkasanti();
+    await _store.saveInkasanti(_inkasanti);
+    final updated = _inkasanti.firstWhere(
+      (item) =>
+          item.idink == fallback.idink ||
+          item.username.trim().toLowerCase() ==
+              fallback.username.trim().toLowerCase(),
+      orElse: () => fallback,
+    );
+    _currentUser = updated;
+    return updated;
+  }
+
   Future<void> _loadLastSuccessfulSyncAt() async {
     final value = await _store.loadMetaValue('last_successful_sync_at');
     _lastSuccessfulSyncAt = value == null ? null : DateTime.tryParse(value);
@@ -478,13 +575,37 @@ class DemoVodovodRepository {
     return a.potrosac.compareTo(b.potrosac);
   }
 
-  List<OcitavanjeModel> _ocitavanjaZaInkasanta(InkasantiModel user) {
+  bool _isPendingOcitavanjeUpload(OcitavanjeModel item) {
+    return !item.isSynced && item.ocitano.trim().toLowerCase() == 'da';
+  }
+
+  List<OcitavanjeModel> _ocitavanjaZaInkasanta(
+    InkasantiModel user, {
+    required bool activeOnly,
+  }) {
     final id = user.idZaOcitavanja.trim();
-    if (id.isEmpty) return List.of(_ocitavanja);
+    final source = activeOnly ? _aktivnaOcitavanja() : _ocitavanja;
+    if (id.isEmpty) return List.of(source);
     final filtered = _ocitavanja
         .where((item) => item.idink.trim() == id)
         .toList();
-    return filtered.isEmpty ? List.of(_ocitavanja) : filtered;
+    if (!activeOnly) return filtered.isEmpty ? List.of(_ocitavanja) : filtered;
+    final activeFiltered = filtered
+        .where(
+          (item) =>
+              (_aktivnoOcitavanje?.id ?? 0) <= 0 ||
+              item.ocitavanjeGlavnoId == _aktivnoOcitavanje?.id,
+        )
+        .toList();
+    return activeFiltered.isEmpty ? List.of(source) : activeFiltered;
+  }
+
+  List<OcitavanjeModel> _aktivnaOcitavanja() {
+    final activeId = _aktivnoOcitavanje?.id ?? 0;
+    if (activeId <= 0) return List.of(_ocitavanja);
+    return _ocitavanja
+        .where((item) => item.ocitavanjeGlavnoId == activeId)
+        .toList();
   }
 
   Future<List<InkasantiModel>> _fetchInkasanti() async {
@@ -513,6 +634,27 @@ class DemoVodovodRepository {
       '${AppConfig.apiBaseUrl}${AppConfig.ocitavanjaPath}/$maxId/$encodedId',
     );
     return _asList(json).map((item) => OcitavanjeModel.fromJson(item)).toList();
+  }
+
+  Future<OcitavanjeModel> _fetchOcitavanjeById(int id) async {
+    final json = await _getJson(
+      '${AppConfig.apiBaseUrl}${AppConfig.ocitavanjaPath}/$id',
+    );
+    if (json is! Map<String, dynamic>) {
+      throw BackendException('Backend nije vratio očitavanje $id.');
+    }
+    return OcitavanjeModel.fromJson(json);
+  }
+
+  bool _serverConfirmsOcitavanje(
+    OcitavanjeModel local,
+    OcitavanjeModel server,
+  ) {
+    return server.id == local.id &&
+        server.novoStanje == local.novoStanje &&
+        server.idstanjebrojila == local.idstanjebrojila &&
+        server.isSynced &&
+        server.ocitano.trim().toLowerCase() == 'da';
   }
 
   Future<List<StanjeBrojilaModel>> _fetchStanjaBrojila() async {

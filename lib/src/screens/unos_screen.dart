@@ -169,12 +169,13 @@ class _UnosScreenState extends State<UnosScreen> {
     }
 
     try {
-      return await Geolocator.getCurrentPosition(
+      final currentPosition = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 3),
         ),
       );
+      return currentPosition;
     } catch (_) {
       return await Geolocator.getLastKnownPosition();
     }

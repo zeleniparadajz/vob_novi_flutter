@@ -187,11 +187,13 @@ class LocalVodovodStore {
     List<OcitavanjeModel> items,
   ) async {
     final db = await database;
-    final unsynced = (await loadUnsyncedOcitavanja())
-        .where(_isLocalPendingUpload)
-        .toList();
+    final unsynced = await loadUnsyncedOcitavanja();
     final unsyncedById = {for (final item in unsynced) item.id: item};
-    final merged = items.map((item) => unsyncedById[item.id] ?? item).toList();
+    final importedIds = items.map((item) => item.id).toSet();
+    final merged = [
+      ...items.map((item) => unsyncedById[item.id] ?? item),
+      ...unsynced.where((item) => !importedIds.contains(item.id)),
+    ];
 
     final batch = db.batch();
     batch.delete('ocitavanja');
@@ -223,10 +225,12 @@ class LocalVodovodStore {
 
   Future<List<OcitavanjeModel>> loadUnsyncedOcitavanja() async {
     final db = await database;
-    final rows = await db.query('ocitavanja', where: 'is_synced = 0');
+    final rows = await db.query(
+      'ocitavanja',
+      where: "is_synced = 0 AND UPPER(ocitano) = 'DA'",
+    );
     return rows
         .map((row) => OcitavanjeModel.fromJson(_decode(row['payload'])))
-        .where(_isLocalPendingUpload)
         .toList();
   }
 
@@ -270,18 +274,12 @@ class LocalVodovodStore {
   }
 
   Map<String, Object?> _rowForOcitavanjeImport(OcitavanjeModel item) {
-    final synced = item.copyWith(isSynced: true);
     return {
-      'id': synced.id,
-      'ocitano': synced.ocitano.toUpperCase(),
-      'is_synced': 1,
-      'payload': jsonEncode(synced.toJson()),
+      'id': item.id,
+      'ocitano': item.ocitano.toUpperCase(),
+      'is_synced': item.isSynced ? 1 : 0,
+      'payload': jsonEncode(item.toJson()),
     };
-  }
-
-  bool _isLocalPendingUpload(OcitavanjeModel item) {
-    if (item.isSynced) return false;
-    return item.latitude.trim().isNotEmpty || item.longitude.trim().isNotEmpty;
   }
 
   Map<String, dynamic> _decode(Object? payload) {
