@@ -173,7 +173,7 @@ class _OcitavanjeTile extends StatelessWidget {
       color: item.isOcitano
           ? item.idstanjebrojila > 1
                 ? const Color(0xFFFFF4DE)
-                : const Color(0xFFEAF7EF)
+                : const Color.fromARGB(255, 181, 255, 202)
           : Colors.white,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),

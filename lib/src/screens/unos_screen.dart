@@ -25,6 +25,7 @@ class UnosScreen extends StatefulWidget {
 
 class _UnosScreenState extends State<UnosScreen> {
   late final TextEditingController stanjeController;
+  final stanjeFocusNode = FocusNode();
   late int selectedIndikatorId;
   bool isSaving = false;
 
@@ -52,12 +53,19 @@ class _UnosScreenState extends State<UnosScreen> {
     if (shouldCopyOldState) {
       stanjeController.text = widget.ocitavanje.stanje.toString();
     }
+    stanjeFocusNode.addListener(_handleStanjeFocusChanged);
   }
 
   @override
   void dispose() {
+    stanjeFocusNode.removeListener(_handleStanjeFocusChanged);
+    stanjeFocusNode.dispose();
     stanjeController.dispose();
     super.dispose();
+  }
+
+  void _handleStanjeFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> save() async {
@@ -232,8 +240,9 @@ class _UnosScreenState extends State<UnosScreen> {
     final theme = Theme.of(context);
     final indikator = selectedIndikator;
     final potrosnja = _calculatePotrosnja();
+    final isEditingState = stanjeFocusNode.hasFocus;
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('Unos očitavanja'),
         actions: [
@@ -256,57 +265,71 @@ class _UnosScreenState extends State<UnosScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-          child: OutlinedButton.icon(
-            onPressed: () {
-              Navigator.of(context, rootNavigator: true).push(
-                MaterialPageRoute(
-                  builder: (_) => NapomenaScreen(
-                    repository: widget.repository,
-                    ocitavanje: item,
-                    quickMode: true,
-                    autoOpenCamera: true,
-                  ),
+      bottomNavigationBar: isEditingState
+          ? null
+          : SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context, rootNavigator: true).push(
+                      MaterialPageRoute(
+                        builder: (_) => NapomenaScreen(
+                          repository: widget.repository,
+                          ocitavanje: item,
+                          quickMode: true,
+                          autoOpenCamera: true,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('Brzo slikanje'),
                 ),
-              );
-            },
-            icon: const Icon(Icons.photo_camera_outlined),
-            label: const Text('Brzo slikanje'),
-          ),
-        ),
-      ),
+              ),
+            ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
+            key: ValueKey(
+              isEditingState ? 'consumer_info_compact' : 'consumer_info_full',
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _InfoIdentityRow(idpot: item.idpot, potrosac: item.potrosac),
-                  const SizedBox(height: 8),
-                  _InfoRow(icon: Icons.home_outlined, text: item.adr),
-                  _InfoRow(icon: Icons.pin_drop_outlined, text: item.lokacija),
-                  _InfoRow(
-                    icon: Icons.water_drop_outlined,
-                    text: item.vodomjer,
-                  ),
-                  _InfoRow(
-                    icon: Icons.account_balance_wallet_outlined,
-                    text: 'Dug ${item.saldo}',
-                  ),
-                ],
-              ),
+              padding: EdgeInsets.all(isEditingState ? 10 : 16),
+              child: isEditingState
+                  ? _CompactInfoRow(item: item)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _InfoIdentityRow(
+                          idpot: item.idpot,
+                          potrosac: item.potrosac,
+                        ),
+                        const SizedBox(height: 8),
+                        _InfoRow(icon: Icons.home_outlined, text: item.adr),
+                        _InfoRow(
+                          icon: Icons.pin_drop_outlined,
+                          text: item.lokacija,
+                        ),
+                        _InfoRow(
+                          icon: Icons.water_drop_outlined,
+                          text: item.vodomjer,
+                        ),
+                        _InfoRow(
+                          icon: Icons.account_balance_wallet_outlined,
+                          text: 'Dug ${item.saldo}',
+                        ),
+                      ],
+                    ),
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: isEditingState ? 10 : 16),
           Card(
+            key: const ValueKey('reading_input_card'),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(isEditingState ? 10 : 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -317,13 +340,15 @@ class _UnosScreenState extends State<UnosScreen> {
                             ? _MeterBox(
                                 label: 'Staro stanje',
                                 value: 'Sakriveno',
+                                compact: isEditingState,
                               )
                             : _MeterBox(
                                 label: 'Staro stanje',
                                 value: item.stanje.toString(),
+                                compact: isEditingState,
                               ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: _MeterBox(
                           label: 'Indikator',
@@ -331,14 +356,16 @@ class _UnosScreenState extends State<UnosScreen> {
                           subtitle: indikator?.opis,
                           icon: Icons.edit_outlined,
                           onTap: chooseIndikator,
+                          compact: isEditingState,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 18),
+                  SizedBox(height: isEditingState ? 10 : 18),
                   if (!shouldCopyOldState) ...[
                     TextField(
                       controller: stanjeController,
+                      focusNode: stanjeFocusNode,
                       keyboardType: TextInputType.number,
                       textInputAction: TextInputAction.done,
                       onChanged: (_) => setState(() {}),
@@ -353,7 +380,7 @@ class _UnosScreenState extends State<UnosScreen> {
                       ),
                     ),
                     if (potrosnja != null) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Text(
                         'Potrošnja: $potrosnja m3',
                         textAlign: TextAlign.center,
@@ -380,7 +407,7 @@ class _UnosScreenState extends State<UnosScreen> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 16),
+                  SizedBox(height: isEditingState ? 10 : 16),
                   FilledButton.icon(
                     onPressed: isSaving ? null : () => unawaited(save()),
                     icon: isSaving
@@ -450,6 +477,56 @@ class _InfoIdentityRow extends StatelessWidget {
   }
 }
 
+class _CompactInfoRow extends StatelessWidget {
+  const _CompactInfoRow({required this.item});
+
+  final OcitavanjeModel item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryStyle = theme.textTheme.labelLarge?.copyWith(
+      color: theme.colorScheme.primary,
+      fontWeight: FontWeight.w800,
+    );
+    final subtleStyle = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w700,
+    );
+    return Row(
+      children: [
+        Icon(Icons.person_outline, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(item.idpot, style: primaryStyle),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            item.potrosac,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: primaryStyle,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Icon(
+          Icons.water_drop_outlined,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            item.vodomjer,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: subtleStyle,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _InfoRow extends StatelessWidget {
   const _InfoRow({required this.icon, required this.text});
 
@@ -478,6 +555,7 @@ class _MeterBox extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.onTap,
+    this.compact = false,
   });
 
   final String label;
@@ -485,6 +563,7 @@ class _MeterBox extends StatelessWidget {
   final String? subtitle;
   final IconData? icon;
   final VoidCallback? onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -496,7 +575,7 @@ class _MeterBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: EdgeInsets.all(compact ? 10 : 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -508,14 +587,18 @@ class _MeterBox extends StatelessWidget {
                   if (icon != null) Icon(icon, size: 16),
                 ],
               ),
-              const SizedBox(height: 6),
+              SizedBox(height: compact ? 3 : 6),
               Text(
                 value,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style:
+                    (compact
+                            ? theme.textTheme.titleMedium
+                            : theme.textTheme.titleLarge)
+                        ?.copyWith(fontWeight: FontWeight.w800),
               ),
-              if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
+              if (!compact &&
+                  subtitle != null &&
+                  subtitle!.trim().isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
                   subtitle!,
