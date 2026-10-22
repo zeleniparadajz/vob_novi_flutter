@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Shared diagnostics ingestion key, configured locally for every Android build.
+/android/diagnostics.properties

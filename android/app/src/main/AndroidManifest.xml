@@ -4,12 +4,22 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="VOB Ocitavanje"
-        android:name="${applicationName}"
+        android:name=".VodovodApplication"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
+        <provider
+            android:name=".UpdateFileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"

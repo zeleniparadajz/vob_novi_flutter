@@ -1,12 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../data/demo_repository.dart';
+import '../core/app_logger.dart';
+import '../core/note_photo_processor.dart';
 import '../models/vodovod_models.dart';
 
 class NapomenaScreen extends StatefulWidget {
@@ -56,22 +58,36 @@ class _NapomenaScreenState extends State<NapomenaScreen> {
   }
 
   Future<void> pickImage(ImageSource source) async {
-    final picked = await picker.pickImage(source: source, imageQuality: 100);
-    if (picked == null) {
-      if (widget.quickMode && widget.autoOpenCamera && mounted) {
-        Navigator.of(context).pop();
-      }
-      return;
-    }
+    if (isProcessingImage || isSaving) return;
     setState(() => isProcessingImage = true);
     try {
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: notePhotoMaxDimension.toDouble(),
+        maxHeight: notePhotoMaxDimension.toDouble(),
+        imageQuality: 100,
+      );
+      if (!mounted) return;
+      if (picked == null) {
+        if (widget.quickMode && widget.autoOpenCamera) {
+          Navigator.of(context).pop();
+        }
+        return;
+      }
       final processed = await _processImage(File(picked.path));
       if (!mounted) return;
       setState(() => selectedImage = processed);
       if (widget.quickMode) {
         await save(isZamjena: false);
       }
-    } catch (error) {
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error(
+          'Obrada slike za očitavanje ${widget.ocitavanje.id}',
+          error,
+          stack,
+        ),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Greška pri obradi slike: $error')),
@@ -82,43 +98,24 @@ class _NapomenaScreenState extends State<NapomenaScreen> {
   }
 
   Future<File> _processImage(File file) async {
-    final bytes = await file.readAsBytes();
-    final original = img.decodeImage(bytes);
-    if (original == null) {
-      throw const FormatException('Slika nije validna.');
-    }
-
-    final resized = original.width > 1920
-        ? img.copyResize(original, width: 1920)
-        : original;
     final currentDate = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
     final text = 'Vodomjer: ${widget.ocitavanje.vodomjer} | $currentDate';
-
-    img.drawString(
-      resized,
-      text,
-      font: img.arial24,
-      x: 50,
-      y: 50,
-      color: img.ColorRgb8(0, 0, 0),
-    );
-    img.drawString(
-      resized,
-      text,
-      font: img.arial24,
-      x: 48,
-      y: 48,
-      color: img.ColorRgb8(255, 255, 255),
-    );
-
     final dir = await getTemporaryDirectory();
     final safeMeter = widget.ocitavanje.vodomjer.replaceAll('/', '-');
     final safeCustomer = widget.ocitavanje.idpot.replaceAll('/', '-');
-    final output = File(
-      '${dir.path}/slika_IDMM_${safeMeter}_IDPOT_${safeCustomer}_r_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    final stopwatch = Stopwatch()..start();
+    final path = await prepareNotePhoto(
+      sourcePath: file.path,
+      outputPath:
+          '${dir.path}/slika_IDMM_${safeMeter}_IDPOT_${safeCustomer}_r_${DateTime.now().microsecondsSinceEpoch}.jpg',
+      label: text,
     );
-    await output.writeAsBytes(img.encodeJpg(resized, quality: 90));
-    return output;
+    unawaited(
+      AppLogger.log(
+        'Obrada slike za očitavanje ${widget.ocitavanje.id}: ${stopwatch.elapsedMilliseconds} ms',
+      ),
+    );
+    return File(path);
   }
 
   Future<void> save({required bool isZamjena}) async {
@@ -149,9 +146,23 @@ class _NapomenaScreenState extends State<NapomenaScreen> {
           slikaPath: selectedImage!.path,
         ),
       );
-    } catch (error) {
-      if (mounted) setState(() => isSaving = false);
-      rethrow;
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error(
+          'Čuvanje napomene za očitavanje ${widget.ocitavanje.id}',
+          error,
+          stack,
+        ),
+      );
+      if (mounted) {
+        setState(() => isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Napomena nije sačuvana. Pokušajte ponovo.'),
+          ),
+        );
+      }
+      return;
     }
 
     if (!mounted) return;
@@ -244,7 +255,7 @@ class _NapomenaScreenState extends State<NapomenaScreen> {
           const SizedBox(height: 16),
           _ImagePickerBox(
             image: selectedImage,
-            isProcessing: isProcessingImage,
+            isProcessing: isProcessingImage || isSaving,
             onCamera: () => pickImage(ImageSource.camera),
             onGallery: () => pickImage(ImageSource.gallery),
           ),
@@ -304,7 +315,7 @@ class _ImagePickerBox extends StatelessWidget {
                   top: Radius.circular(8),
                 ),
               ),
-              child: image == null
+              child: image == null || isProcessing
                   ? Center(
                       child: isProcessing
                           ? const CircularProgressIndicator()
@@ -318,7 +329,23 @@ class _ImagePickerBox extends StatelessWidget {
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(8),
                       ),
-                      child: Image.file(image!, fit: BoxFit.cover),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => Image.file(
+                          image!,
+                          fit: BoxFit.contain,
+                          cacheWidth:
+                              (constraints.maxWidth *
+                                      MediaQuery.devicePixelRatioOf(context))
+                                  .ceil()
+                                  .clamp(1, 1280),
+                          errorBuilder: (_, error, stack) {
+                            AppLogger.imageError(image!.path, error, stack);
+                            return const Center(
+                              child: Icon(Icons.broken_image_outlined),
+                            );
+                          },
+                        ),
+                      ),
                     ),
             ),
           ),

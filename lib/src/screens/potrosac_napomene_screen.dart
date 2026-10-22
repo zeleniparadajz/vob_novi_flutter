@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/demo_repository.dart';
+import '../core/app_logger.dart';
 import '../models/vodovod_models.dart';
 
 class PotrosacNapomeneScreen extends StatefulWidget {
@@ -26,7 +28,22 @@ class _PotrosacNapomeneScreenState extends State<PotrosacNapomeneScreen> {
   @override
   void initState() {
     super.initState();
-    notesFuture = widget.repository.napomeneZaPotrosaca(widget.idpot);
+    notesFuture = _loadNotes();
+  }
+
+  Future<List<BackendNapomenaModel>> _loadNotes() async {
+    try {
+      return await widget.repository.napomeneZaPotrosaca(widget.idpot);
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error(
+          'Pregled napomena za potrošača ${widget.idpot}',
+          error,
+          stack,
+        ),
+      );
+      rethrow;
+    }
   }
 
   @override
@@ -118,7 +135,7 @@ class _BackendNoteCard extends StatelessWidget {
                 ),
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: Image.network(note.imageUrl, fit: BoxFit.cover),
+                  child: Image.network(note.imageUrl, fit: BoxFit.contain),
                 ),
               ),
             ),

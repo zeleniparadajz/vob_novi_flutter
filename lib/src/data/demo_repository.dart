@@ -93,14 +93,23 @@ class DemoVodovodRepository {
   Future<void> clearSavedLogin() async {
     await _store.deleteMetaValue('session_username');
     await _store.deleteMetaValue('session_password');
+    AppLogger.userId = null;
   }
 
   Future<InkasantiModel> login(String username, String password) async {
-    unawaited(AppLogger.log('Pokrenuta prijava korisnika: $username'));
+    AppLogger.userId = null;
+    unawaited(AppLogger.log('Pokrenuta prijava korisnika'));
     try {
       _inkasanti = await _fetchInkasanti();
       await _store.saveInkasanti(_inkasanti);
-    } catch (_) {
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error(
+          'Prijava: preuzimanje korisnika sa servera',
+          error,
+          stack,
+        ),
+      );
       _inkasanti = await _store.loadInkasanti();
     }
 
@@ -113,14 +122,11 @@ class DemoVodovodRepository {
           throw const AuthException('Pogrešno korisničko ime ili lozinka.'),
     );
     _currentUser = user;
+    AppLogger.userId = user.idZaOcitavanja;
 
     await _loadWorkPackage(user);
     await _loadLastSuccessfulSyncAt();
-    unawaited(
-      AppLogger.log(
-        'Uspjesna prijava: ${user.ime}, ID: ${user.idZaOcitavanja}',
-      ),
-    );
+    unawaited(AppLogger.log('Uspjesna prijava, ID: ${user.idZaOcitavanja}'));
     startPeriodicSync();
     return user;
   }
@@ -223,11 +229,27 @@ class DemoVodovodRepository {
     final json = await _getJson(
       AppConfig.versionUrl,
     ).timeout(const Duration(seconds: 5));
-    if (json is! Map<String, dynamic>) return null;
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException('Neispravan odgovor za provjeru verzije.');
+    }
     final versionCode = _asInt(json['versionCode']);
     final apkUrl = json['apkUrl']?.toString().trim() ?? '';
-    if (versionCode <= currentBuildNumber || apkUrl.isEmpty) return null;
-    return AppUpdateInfo(versionCode: versionCode, apkUrl: apkUrl);
+    if (versionCode <= 0) throw const FormatException('Nedostaje versionCode.');
+    if (versionCode <= currentBuildNumber) return null;
+    final apkUri = Uri.tryParse(apkUrl);
+    if (apkUri == null ||
+        !['http', 'https'].contains(apkUri.scheme) ||
+        apkUri.host.isEmpty) {
+      throw const FormatException('Nedostaje ispravan APK link.');
+    }
+    final versionName = json['versionName']?.toString().trim();
+    return AppUpdateInfo(
+      versionCode: versionCode,
+      apkUrl: apkUrl,
+      versionName: versionName == null || versionName.isEmpty
+          ? null
+          : versionName,
+    );
   }
 
   Future<bool> hasNetworkSignal() async {
@@ -242,7 +264,10 @@ class DemoVodovodRepository {
       ).timeout(const Duration(seconds: 5));
       _lastNetworkFailureAt = null;
       return true;
-    } catch (_) {
+    } catch (error, stack) {
+      if (lastFailure == null) {
+        unawaited(AppLogger.error('Provjera veze sa serverom', error, stack));
+      }
       _lastNetworkFailureAt = DateTime.now();
       return false;
     }
@@ -400,11 +425,11 @@ class DemoVodovodRepository {
         final index = _ocitavanja.indexWhere((local) => local.id == item.id);
         if (index != -1) _ocitavanja[index] = serverItem;
         syncedCount++;
-      } catch (error) {
+      } catch (error, stack) {
         _lastReadingsSyncError ??= 'ID ${item.id}: $error';
         await _store.updateOcitavanje(item.copyWith(isSynced: false));
         unawaited(
-          AppLogger.log('Greska sync ocitavanja ID ${item.id}: $error'),
+          AppLogger.error('Sync očitavanja ID ${item.id}', error, stack),
         );
       }
     }
@@ -437,12 +462,10 @@ class DemoVodovodRepository {
         final file = File(note.slikaPath);
         if (await file.exists()) await file.delete();
         syncedCount++;
-      } catch (error) {
+      } catch (error, stack) {
         _lastNotesSyncError ??= 'ID ${note.localId}: $error';
         unawaited(
-          AppLogger.log(
-            'Greska sync napomene ${note.localId} / ${note.idpot}: $error',
-          ),
+          AppLogger.error('Sync napomene ${note.localId}', error, stack),
         );
         // Napomena ostaje lokalno za sljedeći pokušaj.
       }
@@ -474,7 +497,14 @@ class DemoVodovodRepository {
       _napomene
         ..clear()
         ..addAll(await _store.loadUnsyncedNapomene());
-    } catch (_) {
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error(
+          'Učitavanje podataka: prelazak na lokalne podatke',
+          error,
+          stack,
+        ),
+      );
       _aktivnoOcitavanje = await _store.loadAktivnoOcitavanje();
       _stanjaBrojila = await _store.loadStanjaBrojila();
       _ocitavanja = await _store.loadOcitavanja();
@@ -529,8 +559,10 @@ class DemoVodovodRepository {
           'Server refresh ($reason): ${serverOcitavanja.length} ocitavanja',
         ),
       );
-    } catch (error) {
-      unawaited(AppLogger.log('Server refresh greska ($reason): $error'));
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error('Osvježavanje sa servera ($reason)', error, stack),
+      );
     }
   }
 
@@ -677,10 +709,16 @@ class DemoVodovodRepository {
         .join()
         .timeout(_readTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw BackendException('Backend greška ${response.statusCode}: $body');
+      throw BackendException(
+        'Backend greška ${response.statusCode}: GET ${Uri.parse(url).path}',
+      );
     }
     if (body.trim().isEmpty) return null;
-    return jsonDecode(body);
+    try {
+      return jsonDecode(body);
+    } on FormatException {
+      throw BackendException('Neispravan JSON: GET ${Uri.parse(url).path}');
+    }
   }
 
   Future<Object?> _postJson(String url, Object payload) async {
@@ -700,10 +738,16 @@ class DemoVodovodRepository {
         .join()
         .timeout(_readTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw BackendException('Backend greška ${response.statusCode}: $body');
+      throw BackendException(
+        'Backend greška ${response.statusCode}: POST ${Uri.parse(url).path}',
+      );
     }
     if (body.trim().isEmpty) return null;
-    return jsonDecode(body);
+    try {
+      return jsonDecode(body);
+    } on FormatException {
+      throw BackendException('Neispravan JSON: POST ${Uri.parse(url).path}');
+    }
   }
 
   Future<void> _putOcitavanje(OcitavanjeModel item) async {
@@ -721,12 +765,11 @@ class DemoVodovodRepository {
     );
     request.add(utf8.encode(jsonEncode(item.toJson())));
     final response = await request.close().timeout(_readTimeout);
-    final body = await response
-        .transform(utf8.decoder)
-        .join()
-        .timeout(_readTimeout);
+    await response.drain<void>().timeout(_readTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw BackendException('Sync greška ${response.statusCode}: $body');
+      throw BackendException(
+        'Sync greška ${response.statusCode}: očitavanje ${item.id}',
+      );
     }
   }
 
@@ -781,12 +824,11 @@ class DemoVodovodRepository {
     request.add(utf8.encode('\r\n--$boundary--\r\n'));
 
     final response = await request.close().timeout(_uploadTimeout);
-    final body = await response
-        .transform(utf8.decoder)
-        .join()
-        .timeout(_readTimeout);
+    await response.drain<void>().timeout(_readTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw BackendException('Upload napomene ${response.statusCode}: $body');
+      throw BackendException(
+        'Upload napomene ${response.statusCode}: napomena ${note.localId}',
+      );
     }
   }
 
@@ -812,10 +854,15 @@ class DemoVodovodRepository {
 }
 
 class AppUpdateInfo {
-  const AppUpdateInfo({required this.versionCode, required this.apkUrl});
+  const AppUpdateInfo({
+    required this.versionCode,
+    required this.apkUrl,
+    this.versionName,
+  });
 
   final int versionCode;
   final String apkUrl;
+  final String? versionName;
 }
 
 class AuthException implements Exception {

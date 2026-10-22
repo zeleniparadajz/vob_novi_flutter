@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../data/demo_repository.dart';
+import '../core/app_logger.dart';
 import '../models/vodovod_models.dart';
 import 'napomena_screen.dart';
 
@@ -113,6 +114,21 @@ class _UnosScreenState extends State<UnosScreen> {
         ),
       );
       Navigator.of(context).pop();
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error(
+          'Čuvanje očitavanja ID ${widget.ocitavanje.id}',
+          error,
+          stack,
+        ),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Stanje nije sačuvano. Pokušajte ponovo.'),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
@@ -184,7 +200,10 @@ class _UnosScreenState extends State<UnosScreen> {
         ),
       );
       return currentPosition;
-    } catch (_) {
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error('Lokacija: prelazak na zadnju poznatu', error, stack),
+      );
       return await Geolocator.getLastKnownPosition();
     }
   }

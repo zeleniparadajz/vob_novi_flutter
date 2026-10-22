@@ -5,8 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../data/demo_repository.dart';
+import '../core/app_logger.dart';
 import '../models/vodovod_models.dart';
 import '../widgets/reading_countdown.dart';
+import '../widgets/update_gate.dart';
+import 'diagnostics_screen.dart';
 import 'login_screen.dart';
 import 'pretraga_screen.dart';
 import 'ruta_screen.dart';
@@ -220,7 +223,8 @@ class _ReoniHomeScreenState extends State<_ReoniHomeScreen> {
           ),
         ),
       );
-    } catch (error) {
+    } catch (error, stack) {
+      unawaited(AppLogger.error('Ručno slanje očitavanja', error, stack));
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -321,6 +325,18 @@ class _ReoniHomeScreenState extends State<_ReoniHomeScreen> {
                 isSyncing: isSyncing,
                 onSync: _manualSync,
                 onLogout: widget.onLogout,
+                onDiagnostics: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
+                ),
+                onUpdate: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => UpdateGate(
+                      repository: repository,
+                      alwaysShow: true,
+                      child: const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
                 onPendingTap: _openUnsyncedReadings,
               ),
             ),
@@ -402,6 +418,8 @@ class _StatusHeader extends StatelessWidget {
     required this.onSync,
     required this.onLogout,
     required this.onPendingTap,
+    required this.onDiagnostics,
+    required this.onUpdate,
   });
 
   final InkasantiModel user;
@@ -413,6 +431,8 @@ class _StatusHeader extends StatelessWidget {
   final VoidCallback onSync;
   final VoidCallback onLogout;
   final VoidCallback onPendingTap;
+  final VoidCallback onDiagnostics;
+  final VoidCallback onUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -449,12 +469,45 @@ class _StatusHeader extends StatelessWidget {
                           ),
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Odjavi se',
-                        onPressed: onLogout,
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.logout_outlined, size: 20),
-                        color: theme.colorScheme.onSurfaceVariant,
+                      PopupMenuButton<String>(
+                        tooltip: 'Korisnički meni',
+                        icon: const Icon(Icons.more_vert),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'diagnostics':
+                              onDiagnostics();
+                            case 'update':
+                              onUpdate();
+                            case 'logout':
+                              onLogout();
+                          }
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'diagnostics',
+                            child: ListTile(
+                              leading: Icon(Icons.bug_report_outlined),
+                              title: Text('Greške i dijagnostika'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'update',
+                            child: ListTile(
+                              leading: Icon(Icons.system_update_outlined),
+                              title: Text('Ažuriranje aplikacije'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'logout',
+                            child: ListTile(
+                              leading: Icon(Icons.logout_outlined),
+                              title: Text('Odjavi se'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

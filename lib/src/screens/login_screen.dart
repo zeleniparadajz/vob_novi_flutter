@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../data/demo_repository.dart';
+import '../core/app_logger.dart';
+import 'diagnostics_screen.dart';
 import 'reon_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -69,7 +73,8 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (_) => ReonScreen(repository: widget.repository, user: user),
         ),
       );
-    } catch (error) {
+    } catch (error, stack) {
+      unawaited(AppLogger.error('Prijava nije uspjela', error, stack));
       if (!mounted) return;
       if (!auto) {
         ScaffoldMessenger.of(
@@ -158,6 +163,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Center(
+                    child: IconButton(
+                      tooltip: 'Greške i dijagnostika',
+                      icon: const Icon(Icons.bug_report_outlined),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const DiagnosticsScreen(),
+                        ),
+                      ),
                     ),
                   ),
                 ],

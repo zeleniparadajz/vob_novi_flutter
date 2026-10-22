@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../core/app_logger.dart';
 
 import '../data/demo_repository.dart';
 
@@ -54,7 +55,8 @@ class _UnsyncedNotesScreenState extends State<UnsyncedNotesScreen> {
           ),
         ),
       );
-    } catch (error) {
+    } catch (error, stack) {
+      unawaited(AppLogger.error('Ručno slanje napomena', error, stack));
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -136,18 +138,26 @@ class _UnsyncedNotesScreenState extends State<UnsyncedNotesScreen> {
               borderRadius: BorderRadius.circular(8),
               child: SizedBox.square(
                 dimension: 56,
-                child: imageFile.existsSync()
-                    ? Image.file(imageFile, fit: BoxFit.cover)
-                    : ColoredBox(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        child: Icon(
-                          note.isPrijava
-                              ? Icons.swap_horiz_outlined
-                              : Icons.note_alt_outlined,
-                        ),
+                child: Image.file(
+                  imageFile,
+                  fit: BoxFit.contain,
+                  cacheWidth: (56 * MediaQuery.devicePixelRatioOf(context))
+                      .ceil()
+                      .clamp(1, 256),
+                  errorBuilder: (_, error, stack) {
+                    AppLogger.imageError(imageFile.path, error, stack);
+                    return ColoredBox(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      child: Icon(
+                        note.isPrijava
+                            ? Icons.swap_horiz_outlined
+                            : Icons.note_alt_outlined,
                       ),
+                    );
+                  },
+                ),
               ),
             ),
             title: Text(

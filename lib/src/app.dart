@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'data/demo_repository.dart';
+import 'core/app_logger.dart';
 import 'screens/login_screen.dart';
 import 'theme/app_theme.dart';
 import 'widgets/location_gate.dart';
@@ -33,6 +34,7 @@ class _VodovodAppState extends State<VodovodApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(AppLogger.sendPending(force: true));
       unawaited(repository.syncPendingNow(reason: 'app_resumed'));
     }
   }

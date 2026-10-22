@@ -18,4 +18,12 @@ class AppConfig {
   static const maxOcitavanjePath = '/api/Ocitavanja_glavna/MaxPlusDate';
   static const ocitavanjaPath = '/apiV/ocitavanjas';
   static const napomenaUploadPath = '/api/vobNapomena/upload2';
+  static const diagnosticsBaseUrl = String.fromEnvironment(
+    'DIAGNOSTICS_BASE_URL',
+    defaultValue: apiBaseUrl,
+  );
+  static const diagnosticsKey = String.fromEnvironment(
+    'DIAGNOSTICS_UPLOAD_KEY',
+  );
+  static const diagnosticsPath = '/api/app-errors/batch';
 }

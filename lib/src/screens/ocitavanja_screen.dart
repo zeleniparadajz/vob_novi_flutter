@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../data/demo_repository.dart';
+import '../core/app_logger.dart';
 import '../models/vodovod_models.dart';
 import 'potrosac_napomene_screen.dart';
 import '../widgets/reading_countdown.dart';
@@ -48,7 +49,10 @@ class _OcitavanjaScreenState extends State<OcitavanjaScreen> {
       );
       if (!mounted) return;
       setState(() => latestNotes = notes);
-    } catch (_) {
+    } catch (error, stack) {
+      unawaited(
+        AppLogger.error('Učitavanje slika napomena u listi', error, stack),
+      );
       // Thumbnails are online-only. The reading list must stay usable offline.
     }
   }
@@ -296,7 +300,7 @@ class _TrailingStatus extends StatelessWidget {
                   dimension: 64,
                   child: Image.network(
                     note.imageUrl,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     loadingBuilder: (context, child, progress) {
                       if (progress == null) return child;
                       return ColoredBox(
@@ -309,7 +313,8 @@ class _TrailingStatus extends StatelessWidget {
                         ),
                       );
                     },
-                    errorBuilder: (_, _, _) {
+                    errorBuilder: (_, error, stack) {
+                      AppLogger.imageError(note.imageUrl, error, stack);
                       return ColoredBox(
                         color: theme.colorScheme.surfaceContainerHighest,
                         child: Icon(
